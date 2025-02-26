@@ -1,20 +1,23 @@
 import React, {useContext, useState} from 'react';
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ReactDOM from 'react-dom/client';
 import axios from 'axios';
 import {AuthContext, AuthProvider, IAuthContext, TAuthConfig, TRefreshTokenExpiredEvent} from "react-oauth2-code-pkce"
+import LogoutHandler from "./LogoutHandler";
+import { Helmet } from "react-helmet";
 
 const authConfig: TAuthConfig = {
-    clientId: 'public-client',
-    authorizationEndpoint: 'https://app.please-open.it/auth/realms/ee1afd72-71a9-49ad-a975-54ed46cc56a3/protocol/openid-connect/auth',
-    tokenEndpoint: 'https://app.please-open.it/auth/realms/ee1afd72-71a9-49ad-a975-54ed46cc56a3/protocol/openid-connect/token',
-    logoutEndpoint: 'https://app.please-open.it/auth/realms/ee1afd72-71a9-49ad-a975-54ed46cc56a3/protocol/openid-connect/logout',
-    // redirectUri: 'https://prawn-humble-mackerel.ngrok-free.app',
-    // redirectUri: 'http://localhost:3000',
-    redirectUri: 'http://10.45.16.118:3000', // Only work in Desktop Chrome after follow https://stackoverflow.com/a/78397011/418439
+    clientId: process.env.REACT_APP_CLIENT_ID || 'default-client-id',
+    authorizationEndpoint: process.env.REACT_APP_AUTHORIZATION_ENDPOINT || '',
+    tokenEndpoint: process.env.REACT_APP_TOKEN_ENDPOINT || '',
+    logoutEndpoint: process.env.REACT_APP_LOGOUT_ENDPOINT || '',
+    redirectUri: process.env.REACT_APP_REDIRECT_URI || '',
     scope: 'openid',
     // TODO: Temporary comment to see if the refresh token is working
     // onRefreshTokenExpire: (event: TRefreshTokenExpiredEvent) => window.confirm('Session expired. Refresh page to continue using the site?') && event.login(),
 }
+
+console.log("Auth Config: " + authConfig);
 
 const callEndpoint = async (url: string, token: string) => {
     const currentdate = new Date();
@@ -45,9 +48,9 @@ const callEndpoint = async (url: string, token: string) => {
     return `called at ${datetime} - ${message}`;
 }
 
-const resourceServerDomain = 'http://10.45.16.118:8081';
+const resourceServerDomain = process.env.REACT_APP_RESOURCE_SERVER || '';
 const   UserInfo = (): JSX.Element => {
-    const {token, tokenData, logOut} = useContext<IAuthContext>(AuthContext)
+    const {token, tokenData, logOut, login} = useContext<IAuthContext>(AuthContext)
     const [publicResponse, setPublicResponse] = useState("Not called yet");
     const [adminResponse, setAdminResponse] = useState("Not called yet");
     const [userResponse, setUserResponse] = useState("Not called yet");
@@ -68,6 +71,9 @@ const   UserInfo = (): JSX.Element => {
     }
 
     return <>
+        <Helmet>
+        <meta http-equiv="Content-Security-Policy" content="frame-src 'self' https://app.please-open.it http://localhost:8082 https://prawn-humble-mackerel.ngrok-free.app; frame-ancestors 'self' https://app.please-open.it;" />
+        </Helmet>
         <h4>Your complete Access Token</h4>
         <pre>{token}</pre>
 
@@ -88,6 +94,9 @@ const   UserInfo = (): JSX.Element => {
 
         <br/>
         <button onClick={() => logOut()}>Log out</button>
+        <br/>
+        <br/>
+        <button onClick={() => login()}>Refresh</button>
 
     </>
 }
@@ -97,6 +106,11 @@ const root = ReactDOM.createRoot(
 );
 root.render(
     <AuthProvider authConfig={authConfig}>
-        <UserInfo/>
+        <BrowserRouter>
+            <Routes>
+                <Route path="/" element={<UserInfo />} />
+                <Route path="/logout" element={<LogoutHandler />} />
+            </Routes>
+        </BrowserRouter>
     </AuthProvider>
 );
