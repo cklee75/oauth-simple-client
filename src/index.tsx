@@ -12,7 +12,7 @@ const authConfig: TAuthConfig = {
     tokenEndpoint: process.env.REACT_APP_TOKEN_ENDPOINT || '',
     logoutEndpoint: process.env.REACT_APP_LOGOUT_ENDPOINT || '',
     redirectUri: process.env.REACT_APP_REDIRECT_URI || '',
-    scope: 'openid offline_access',
+    scope: 'openid',
     // TODO: Temporary comment to see if the refresh token is working
     // onRefreshTokenExpire: (event: TRefreshTokenExpiredEvent) => window.confirm('Session expired. Refresh page to continue using the site?') && event.login(),
 }
@@ -54,6 +54,26 @@ const   UserInfo = (): JSX.Element => {
     const [publicResponse, setPublicResponse] = useState("Not called yet");
     const [adminResponse, setAdminResponse] = useState("Not called yet");
     const [userResponse, setUserResponse] = useState("Not called yet");
+    const [refreshToken, setRefreshToken] = useState<string | null>(() => {
+        const raw = window.localStorage.getItem("ROCP_refreshToken");
+        return raw ? raw.substring(1, raw.length - 1) : null;
+    });
+    const [decodedRefreshToken, setDecodedRefreshToken] = useState<string>(() => {
+        if (!refreshToken) return "No refresh token";
+        const parts = refreshToken.split('.');
+        if (parts.length === 3) {
+            try {
+                return JSON.stringify(
+                    JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))),
+                    null,
+                    2
+                );
+            } catch {
+                return "Invalid JWT format";
+            }
+        }
+        return "Not a JWT refresh token";
+    });
 
     const callPublic = async () => {
         const message = await callEndpoint(resourceServerDomain + '/api/v1/public', token);
@@ -72,41 +92,47 @@ const   UserInfo = (): JSX.Element => {
 
 
 const manualRefreshToken = async () => {
+        if (!refreshToken) {
+            alert('No refresh token available.');
+            return;
+        }
+        try {
+            const params = new URLSearchParams({
+                grant_type:    'refresh_token',
+                refresh_token: refreshToken,
+                client_id:     authConfig.clientId,
+            });
 
-  // 2. Grab the raw token response:
-  const raw = window.localStorage.getItem("ROCP_refreshToken");
-  if (!raw) {
-    alert('No token data in storage – please log in first.');
-    return;
-  }
-  // Exclude the quotes around the string 
-  const refreshToken  = raw.substring(1, raw.length - 1);
-  if (!refreshToken) {
-    alert('No refresh_token found; make sure you requested offline_access.');
-    return;
-  }
-
-  // 3. Do the refresh dance:
-  try {
-    const params = new URLSearchParams({
-      grant_type:    'refresh_token',
-      refresh_token: refreshToken,
-      client_id:     authConfig.clientId,
-    });
-
-    const resp = await axios.post(
-      authConfig.tokenEndpoint,
-      params,
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-    );
-    // alert('Token refreshed:\n' + JSON.stringify(resp.data, null, 2));
-    // —and if you want, write the new tokens back into storage:
-    // window.localStorage.setItem(key, JSON.stringify(resp.data));
-  } catch (err) {
-    alert('Refresh failed:\n' + err);
-  }
-};
-
+            const resp = await axios.post(
+                authConfig.tokenEndpoint,
+                params,
+                { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+            );
+            // Update refresh token and decoded value if present
+            if (resp.data.refresh_token) {
+                setRefreshToken(resp.data.refresh_token);
+                window.localStorage.setItem("ROCP_refreshToken", `"${resp.data.refresh_token}"`);
+                const parts = resp.data.refresh_token.split('.');
+                if (parts.length === 3) {
+                    try {
+                        setDecodedRefreshToken(
+                            JSON.stringify(
+                                JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))),
+                                null,
+                                2
+                            )
+                        );
+                    } catch {
+                        setDecodedRefreshToken("Invalid JWT format");
+                    }
+                } else {
+                    setDecodedRefreshToken("Not a JWT refresh token");
+                }
+            }
+        } catch (err) {
+            alert('Refresh failed:\n' + err);
+        }
+    };
 
     return <>
         <Helmet>
@@ -119,33 +145,10 @@ const manualRefreshToken = async () => {
         <pre>{JSON.stringify(tokenData, null, 2)}</pre>
 
         <h4>Your Refresh Token (ROCP_refreshToken)</h4>
-        <pre>{window.localStorage.getItem("ROCP_refreshToken")}</pre>
+        <pre>{refreshToken}</pre>
 
         <h4>Decoded ROCP_refreshToken</h4>
-        <pre>
-        {
-            (() => {
-                const raw = window.localStorage.getItem("ROCP_refreshToken");
-                if (!raw) return "No refresh token";
-                // Remove quotes if present
-                const token = raw.substring(1, raw.length - 1);
-                // JWT decode (base64url)
-                const parts = token.split('.');
-                if (parts.length === 3) {
-                    try {
-                        return JSON.stringify(
-                            JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))),
-                            null,
-                            2
-                        );
-                    } catch (e) {
-                        return "Invalid JWT format";
-                    }
-                }
-                return "Not a JWT refresh token";
-            })()
-        }
-        </pre>
+        <pre>{decodedRefreshToken}</pre>
 
         <br/>
         <button onClick={callPublic}>Call /api/v1/public</button>
