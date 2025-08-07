@@ -54,6 +54,26 @@ const   UserInfo = (): JSX.Element => {
     const [publicResponse, setPublicResponse] = useState("Not called yet");
     const [adminResponse, setAdminResponse] = useState("Not called yet");
     const [userResponse, setUserResponse] = useState("Not called yet");
+
+    // Access Token state
+    const [accessToken, setAccessToken] = useState<string | null>(token);
+    const [decodedAccessToken, setDecodedAccessToken] = useState<string>(() => {
+        if (!token) return "No access token";
+        const parts = token.split('.');
+        if (parts.length === 3) {
+            try {
+                return JSON.stringify(
+                    JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))),
+                    null,
+                    2
+                );
+            } catch {
+                return "Invalid JWT format";
+            }
+        }
+        return "Not a JWT access token";
+    });
+
     const [refreshToken, setRefreshToken] = useState<string | null>(() => {
         const raw = window.localStorage.getItem("ROCP_refreshToken");
         return raw ? raw.substring(1, raw.length - 1) : null;
@@ -129,20 +149,67 @@ const manualRefreshToken = async () => {
                     setDecodedRefreshToken("Not a JWT refresh token");
                 }
             }
+            // Update access token and decoded value if present
+            if (resp.data.access_token) {
+                setAccessToken(resp.data.access_token);
+                const parts = resp.data.access_token.split('.');
+                if (parts.length === 3) {
+                    try {
+                        setDecodedAccessToken(
+                            JSON.stringify(
+                                JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))),
+                                null,
+                                2
+                            )
+                        );
+                    } catch {
+                        setDecodedAccessToken("Invalid JWT format");
+                    }
+                } else {
+                    setDecodedAccessToken("Not a JWT access token");
+                }
+            }
         } catch (err) {
             alert('Refresh failed:\n' + err);
         }
     };
 
+    // Update access token and decoded value if token changes from context
+    React.useEffect(() => {
+        setAccessToken(token);
+        if (!token) {
+            setDecodedAccessToken("No access token");
+        } else {
+            const parts = token.split('.');
+            if (parts.length === 3) {
+                try {
+                    setDecodedAccessToken(
+                        JSON.stringify(
+                            JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))),
+                            null,
+                            2
+                        )
+                    );
+                } catch {
+                    setDecodedAccessToken("Invalid JWT format");
+                }
+            } else {
+                setDecodedAccessToken("Not a JWT access token");
+            }
+        }
+    }, [token]);
+
     return <>
         <Helmet>
         <meta http-equiv="Content-Security-Policy" content="frame-src 'self' https://app.please-open.it http://localhost:8082 https://prawn-humble-mackerel.ngrok-free.app https://sso.digital-id.my; frame-ancestors 'self' https://app.please-open.it https://sso.digital-id.my;" />
         </Helmet>
+        <button onClick={manualRefreshToken}>Refresh Token (OIDC)</button>
+        <br/>
         <h4>Your complete Access Token</h4>
-        <pre>{token}</pre>
+        <pre>{accessToken}</pre>
 
-        <h4>Your decoded Access Token </h4>
-        <pre>{JSON.stringify(tokenData, null, 2)}</pre>
+        <h4>Decoded Access Token</h4>
+        <pre>{decodedAccessToken}</pre>
 
         <h4>Your Refresh Token (ROCP_refreshToken)</h4>
         <pre>{refreshToken}</pre>
